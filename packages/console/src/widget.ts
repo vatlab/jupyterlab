@@ -34,6 +34,7 @@ import { ISignal, Signal } from '@phosphor/signaling';
 import { Panel, PanelLayout, Widget } from '@phosphor/widgets';
 
 import { ForeignHandler } from './foreign';
+import { TransientHandler } from './transient';
 
 import { ConsoleHistory, IConsoleHistory } from './history';
 
@@ -130,8 +131,14 @@ export class CodeConsole extends Widget {
     this._foreignHandler = new ForeignHandler({
       session: this.session,
       parent: this,
-      cellFactory: (transient: boolean = false) =>
-        this._createCodeCell(transient)
+      cellFactory: () => this._createCodeCell(false)
+    });
+
+    // Set up the foreign iopub handler.
+    this._transientHandler = new TransientHandler({
+      session: this.session,
+      parent: this,
+      cellFactory: () => this._createCodeCell(true)
     });
 
     this._history = new ConsoleHistory({
@@ -266,6 +273,7 @@ export class CodeConsole extends Widget {
     this._cells.clear();
     this._history.dispose();
     this._foreignHandler.dispose();
+    this._transientHandler.dispose();
 
     super.dispose();
   }
@@ -279,6 +287,17 @@ export class CodeConsole extends Widget {
   }
   set showAllActivity(value: boolean) {
     this._foreignHandler.enabled = value;
+  }
+
+  /**
+   * Set whether the transientHandler is able to inject transient messages into a
+   * console.
+   */
+  get showTransientMessages(): boolean {
+    return this._transientHandler.enabled;
+  }
+  set showTransientMessages(value: boolean) {
+    this._transientHandler.enabled = value;
   }
 
   /**
@@ -685,6 +704,7 @@ export class CodeConsole extends Widget {
   private _content: Panel;
   private _executed = new Signal<this, Date>(this);
   private _foreignHandler: ForeignHandler;
+  private _transientHandler: TransientHandler;
   private _history: IConsoleHistory;
   private _input: Panel;
   private _mimetype = 'text/x-ipython';

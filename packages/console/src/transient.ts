@@ -17,11 +17,11 @@ import { Signal } from '@phosphor/signaling';
  * A handler for capturing API messages from other sessions that should be
  * rendered in a given parent.
  */
-export class ForeignHandler implements IDisposable {
+export class TransientHandler implements IDisposable {
   /**
-   * Construct a new foreign message handler.
+   * Construct a new Transient message handler.
    */
-  constructor(options: ForeignHandler.IOptions) {
+  constructor(options: TransientHandler.IOptions) {
     this.session = options.session;
     this.session.iopubMessage.connect(
       this.onIOPubMessage,
@@ -32,7 +32,7 @@ export class ForeignHandler implements IDisposable {
   }
 
   /**
-   * Set whether the handler is able to inject foreign cells into a console.
+   * Set whether the handler is able to inject Transient cells into a console.
    */
   get enabled(): boolean {
     return this._enabled;
@@ -42,14 +42,14 @@ export class ForeignHandler implements IDisposable {
   }
 
   /**
-   * The client session used by the foreign handler.
+   * The client session used by the Transient handler.
    */
   readonly session: IClientSession;
 
   /**
-   * The foreign handler's parent receiver.
+   * The Transient handler's parent receiver.
    */
-  get parent(): ForeignHandler.IReceiver {
+  get parent(): TransientHandler.IReceiver {
     return this._parent;
   }
 
@@ -82,7 +82,8 @@ export class ForeignHandler implements IDisposable {
     sender: IClientSession,
     msg: KernelMessage.IIOPubMessage
   ): boolean {
-    // Only process messages if foreign cell injection is enabled.
+    // Only process messages if Transient cell injection is enabled,
+    // or if it is a "transient_display_data" message.
     if (!this._enabled) {
       return false;
     }
@@ -90,59 +91,40 @@ export class ForeignHandler implements IDisposable {
     if (!kernel) {
       return false;
     }
-
+    let msgType = msg.header.msg_type;
+    if (msgType !== 'transient_display_data') {
+      return false;
+    }
     // Check whether this message came from an external session.
     let parent = this._parent;
     let session = (msg.parent_header as KernelMessage.IHeader).session;
     if (session === kernel.clientId) {
       return false;
     }
-    let msgType = msg.header.msg_type;
     let parentHeader = msg.parent_header as KernelMessage.IHeader;
     let parentMsgId = parentHeader.msg_id as string;
     let cell: CodeCell | undefined;
-    switch (msgType) {
-      case 'execute_input':
-        let inputMsg = msg as KernelMessage.IExecuteInputMsg;
-        cell = this._newCell(parentMsgId);
-        let model = cell.model;
-        model.executionCount = inputMsg.content.execution_count;
-        model.value.text = inputMsg.content.code;
-        model.trusted = true;
-        parent.update();
-        return true;
-      case 'execute_result':
-      case 'display_data':
-      case 'stream':
-      case 'error':
-        if (!this._cells.has(parentMsgId)) {
-          // This is an output from an input that was broadcast before our
-          // session started listening. We will ignore it.
-          console.warn('Ignoring output with no associated input cell.');
-          return false;
-        }
-        let output = msg.content as nbformat.IOutput;
-        cell = this._cells.get(parentMsgId);
-        if (cell) {
-          output.output_type = msgType as nbformat.OutputType;
-          cell.model.outputs.add(output);
-        }
-        parent.update();
-        return true;
-      case 'clear_output':
-        let wait = (msg as KernelMessage.IClearOutputMsg).content.wait;
-        cell = this._cells.get(parentMsgId);
-        if (cell) {
-          cell.model.outputs.clear(wait);
-        }
-        return true;
-      default:
-        return false;
+
+    // the message is just a regular display_data message
+    msgType = 'display_data';
+    if (!this._cells.has(parentMsgId)) {
+      // if "Show All Kernel Activity" is disabled and the trnasient messages
+      // are passed without execute_input, create a cell without input.
+      cell = this._newCell(parentMsgId);
     }
+
+    let output = msg.content as nbformat.IOutput;
+    cell = this._cells.get(parentMsgId);
+    if (cell) {
+      output.output_type = msgType as nbformat.OutputType;
+      cell.model.outputs.add(output);
+    }
+    parent.update();
+    return true;
   }
 
   /**
-   * Create a new code cell for an input originated from a foreign session.
+   * Create a new code cell for an input originated from a Transient session.
    */
   private _newCell(parentMsgId: string): CodeCell {
     let cell = this._factory();
@@ -152,22 +134,22 @@ export class ForeignHandler implements IDisposable {
   }
 
   private _cells = new Map<string, CodeCell>();
-  private _enabled = false;
-  private _parent: ForeignHandler.IReceiver;
+  private _enabled = true;
+  private _parent: TransientHandler.IReceiver;
   private _factory: () => CodeCell;
   private _isDisposed = false;
 }
 
 /**
- * A namespace for `ForeignHandler` statics.
+ * A namespace for `TransientHandler` statics.
  */
-export namespace ForeignHandler {
+export namespace TransientHandler {
   /**
-   * The instantiation options for a foreign handler.
+   * The instantiation options for a Transient handler.
    */
   export interface IOptions {
     /**
-     * The client session used by the foreign handler.
+     * The client session used by the Transient handler.
      */
     session: IClientSession;
 
@@ -177,17 +159,17 @@ export namespace ForeignHandler {
     parent: IReceiver;
 
     /**
-     * The cell factory for foreign handlers.
+     * The cell factory for Transient handlers.
      */
     cellFactory: () => CodeCell;
   }
 
   /**
-   * A receiver of newly created foreign cells.
+   * A receiver of newly created Transient cells.
    */
   export interface IReceiver {
     /**
-     * Add a newly created foreign cell.
+     * Add a newly created Transient cell.
      */
     addCell(cell: Cell): void;
 
