@@ -164,7 +164,7 @@
     },
     {
       "command": "notebook:run-in-console",
-      "keys": [""],
+      "keys": ["Ctrl Shift Enter"],
       "selector": ".jp-Notebook.jp-mod-editMode"
     },
     {
